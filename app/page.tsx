@@ -51,12 +51,11 @@ const STORAGE = {
 // ── 유틸 ────────────────────────────────────────────────────
 
 function getMapUrl(r: Restaurant): string {
-  // 1순위: 카카오 place_url (가장 정확)
+  // 1순위: 카카오 place_url (가게 상세 페이지 직접 이동)
   if (r.link && r.link.includes("kakao")) return r.link;
-  // 2순위: 좌표 기반 카카오맵
-  if (r.mapx && r.mapy) return `https://map.kakao.com/link/map/${encodeURIComponent(r.title)},${r.mapy},${r.mapx}`;
-  // 3순위: 이름 검색
-  return `https://map.kakao.com/?q=${encodeURIComponent(r.title)}`;
+  // 2순위: 가게명 + 주소로 검색 (실제 검색 결과 표시)
+  const q = r.roadAddress ? `${r.title} ${r.roadAddress}` : r.title;
+  return `https://map.kakao.com/?q=${encodeURIComponent(q)}`;
 }
 
 function getNaviUrl(r: Restaurant): string {
