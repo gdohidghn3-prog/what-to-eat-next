@@ -51,23 +51,18 @@ const STORAGE = {
 // ── 유틸 ────────────────────────────────────────────────────
 
 function getMapUrl(r: Restaurant): string {
-  // 카카오 place_url이 있으면 카카오맵으로 (가장 정확)
-  if (r.link && r.link.includes("kakao")) {
-    return r.link;
-  }
-  // 좌표 + 이름으로 네이버맵 검색
-  const searchText = r.roadAddress
-    ? `${r.title} ${r.roadAddress}`
-    : r.title;
-  return `https://map.naver.com/v5/search/${encodeURIComponent(searchText)}`;
+  // 1순위: 카카오 place_url (가장 정확)
+  if (r.link && r.link.includes("kakao")) return r.link;
+  // 2순위: 좌표 기반 카카오맵
+  if (r.mapx && r.mapy) return `https://map.kakao.com/link/map/${encodeURIComponent(r.title)},${r.mapy},${r.mapx}`;
+  // 3순위: 이름 검색
+  return `https://map.kakao.com/?q=${encodeURIComponent(r.title)}`;
 }
 
 function getNaviUrl(r: Restaurant): string {
-  // 카카오 길찾기 (좌표가 정확)
-  if (r.mapx && r.mapy) {
-    return `https://map.kakao.com/link/to/${encodeURIComponent(r.title)},${r.mapy},${r.mapx}`;
-  }
-  return `https://map.naver.com/v5/search/${encodeURIComponent(r.title)}`;
+  // 좌표 기반 카카오 길찾기
+  if (r.mapx && r.mapy) return `https://map.kakao.com/link/to/${encodeURIComponent(r.title)},${r.mapy},${r.mapx}`;
+  return `https://map.kakao.com/?q=${encodeURIComponent(r.title)}`;
 }
 
 const CATEGORY_EMOJI: Record<string, string> = {
