@@ -193,14 +193,18 @@ export default function WhatToEatPage() {
       const queries = [
         `${query} 맛집`, `${query} 음식점`, `${query} 식당`,
         `${query} 한식`, `${query} 중식`, `${query} 일식`,
-        `${query} 카페`, `${query} 치킨`, `${query} 분식`,
+        `${query} 양식`, `${query} 카페`, `${query} 치킨`,
+        `${query} 분식`, `${query} 고기`, `${query} 피자`,
       ];
       const allItems: Restaurant[] = [];
       const seen = new Set<string>();
 
-      for (const q of queries) {
-        const res = await fetch(`/api/search?query=${encodeURIComponent(q)}`);
-        const data = await res.json();
+      // 모든 쿼리를 병렬로 호출 (속도 개선)
+      const promises = queries.map((q) =>
+        fetch(`/api/search?query=${encodeURIComponent(q)}`).then((r) => r.json()).catch(() => ({ items: [] })),
+      );
+      const results = await Promise.all(promises);
+      for (const data of results) {
         for (const item of data.items || []) {
           const id = `${item.title}-${item.mapx}-${item.mapy}`;
           if (!seen.has(id)) {

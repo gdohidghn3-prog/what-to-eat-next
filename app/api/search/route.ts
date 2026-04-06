@@ -16,24 +16,36 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const url = `https://openapi.naver.com/v1/search/local.json?query=${encodeURIComponent(query)}&display=5&sort=comment`;
+    // 페이지 1~3 병렬 호출 (최대 15개)
+    const pages = [1, 6, 11];
+    const fetches = pages.map((start) =>
+      fetch(
+        `https://openapi.naver.com/v1/search/local.json?query=${encodeURIComponent(query)}&display=5&start=${start}&sort=comment`,
+        {
+          headers: {
+            "X-Naver-Client-Id": CLIENT_ID,
+            "X-Naver-Client-Secret": CLIENT_SECRET,
+          },
+        },
+      ).then((r) => r.json()).catch(() => ({ items: [] })),
+    );
 
-    const res = await fetch(url, {
-      headers: {
-        "X-Naver-Client-Id": CLIENT_ID,
-        "X-Naver-Client-Secret": CLIENT_SECRET,
-      },
-    });
+    const results = await Promise.all(fetches);
+    const seen = new Set<string>();
+    const items: Record<string, string>[] = [];
 
-    if (!res.ok) {
-      return NextResponse.json({ error: `HTTP ${res.status}`, items: [] }, { status: 500 });
+    for (const data of results) {
+      for (const item of data.items || []) {
+        const key = `${item.title}-${item.mapx}-${item.mapy}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          items.push({
+            ...item,
+            title: (item.title || "").replace(/<[^>]*>/g, ""),
+          });
+        }
+      }
     }
-
-    const data = await res.json();
-    const items = (data.items || []).map((item: Record<string, string>) => ({
-      ...item,
-      title: item.title.replace(/<[^>]*>/g, ""),
-    }));
 
     return NextResponse.json({ items });
   } catch (err) {
