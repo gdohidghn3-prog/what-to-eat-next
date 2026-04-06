@@ -50,17 +50,22 @@ const STORAGE = {
 
 // ── 유틸 ────────────────────────────────────────────────────
 
-function getNaverMapUrl(r: Restaurant): string {
-  // 좌표가 있으면 좌표로 검색, 없으면 이름+주소로
-  if (r.mapx && r.mapy) {
-    return `https://map.naver.com/v5/search/${encodeURIComponent(r.title)}?c=${r.mapx},${r.mapy},15,0,0,0,dh`;
+function getMapUrl(r: Restaurant): string {
+  // 카카오 place_url이 있으면 카카오맵으로 (가장 정확)
+  if (r.link && r.link.includes("kakao")) {
+    return r.link;
   }
-  return `https://map.naver.com/v5/search/${encodeURIComponent(r.title + " " + (r.roadAddress || r.address))}`;
+  // 좌표 + 이름으로 네이버맵 검색
+  const searchText = r.roadAddress
+    ? `${r.title} ${r.roadAddress}`
+    : r.title;
+  return `https://map.naver.com/v5/search/${encodeURIComponent(searchText)}`;
 }
 
 function getNaviUrl(r: Restaurant): string {
+  // 카카오 길찾기 (좌표가 정확)
   if (r.mapx && r.mapy) {
-    return `https://map.naver.com/v5/directions/-/${r.mapx},${r.mapy},${encodeURIComponent(r.title)}/-/walk`;
+    return `https://map.kakao.com/link/to/${encodeURIComponent(r.title)},${r.mapy},${r.mapx}`;
   }
   return `https://map.naver.com/v5/search/${encodeURIComponent(r.title)}`;
 }
@@ -210,11 +215,11 @@ export default function WhatToEatPage() {
       const coords = await resolveCoords(query);
 
       if (coords) {
-        // 카카오 반경 검색 (좌표 + 반경)
-        const res = await fetch(`/api/nearby?x=${coords.x}&y=${coords.y}&radius=${radius}`);
-        const data = await res.json();
+        // 1. 카카오 반경 검색 (좌표 + 반경)
+        const kakaoRes = await fetch(`/api/nearby?x=${coords.x}&y=${coords.y}&radius=${radius}`);
+        const kakaoData = await kakaoRes.json();
 
-        const allItems: Restaurant[] = (data.items || []).map((doc: Record<string, string>) => ({
+        const allItems: Restaurant[] = (kakaoData.items || []).map((doc: Record<string, string>) => ({
           id: doc.id || `${doc.place_name}-${doc.x}-${doc.y}`,
           title: doc.place_name || "",
           category: doc.category_name || "",
@@ -227,6 +232,34 @@ export default function WhatToEatPage() {
           selected: true,
           distance: Number(doc.distance || 0),
         }));
+
+        // 2. 네이버 텍스트 검색 보완 (카카오에서 빠진 음식점 추가)
+        const seen = new Set(allItems.map((r) => r.title));
+        const naverQueries = [`${query} 맛집`, `${query} 음식점`, `${query} 카페`, `${query} 아시안`];
+        const naverPromises = naverQueries.map((q) =>
+          fetch(`/api/search?query=${encodeURIComponent(q)}`).then((r) => r.json()).catch(() => ({ items: [] })),
+        );
+        const naverResults = await Promise.all(naverPromises);
+        for (const data of naverResults) {
+          for (const item of data.items || []) {
+            const cleanTitle = item.title?.replace(/<[^>]*>/g, "") || "";
+            if (!seen.has(cleanTitle)) {
+              seen.add(cleanTitle);
+              allItems.push({
+                id: `naver-${cleanTitle}-${item.mapx}-${item.mapy}`,
+                title: cleanTitle,
+                category: item.category || "",
+                address: item.address || "",
+                roadAddress: item.roadAddress || "",
+                telephone: item.telephone || "",
+                mapx: item.mapx || "",
+                mapy: item.mapy || "",
+                link: item.link || "",
+                selected: true,
+              });
+            }
+          }
+        }
 
         setRestaurants(allItems);
       } else {
@@ -595,7 +628,7 @@ export default function WhatToEatPage() {
                         <button onClick={() => setDetailId(detailId === r.id ? null : r.id)} className="p-1 text-[#94A3B8] hover:text-[#6366F1]">
                           <ExternalLink size={13} />
                         </button>
-                        <a href={getNaverMapUrl(r)} target="_blank" rel="noopener noreferrer" className="p-1 text-[#94A3B8] hover:text-[#16A34A]">
+                        <a href={getMapUrl(r)} target="_blank" rel="noopener noreferrer" className="p-1 text-[#94A3B8] hover:text-[#16A34A]">
                           <Map size={13} />
                         </a>
                         <button onClick={() => toggleExclude(r.id)} className={`p-1 ${excluded.has(r.id) ? "text-[#EF4444]" : "text-[#94A3B8]"}`}>
@@ -643,7 +676,7 @@ export default function WhatToEatPage() {
                   </a>
                 )}
                 <div className="flex gap-2 mt-3">
-                  <a href={getNaverMapUrl(r)} target="_blank" rel="noopener noreferrer" className="flex-1 py-2.5 bg-[#16A34A] text-white text-sm font-medium rounded-xl text-center flex items-center justify-center gap-1">
+                  <a href={getMapUrl(r)} target="_blank" rel="noopener noreferrer" className="flex-1 py-2.5 bg-[#16A34A] text-white text-sm font-medium rounded-xl text-center flex items-center justify-center gap-1">
                     <Map size={14} /> 네이버 지도
                   </a>
                   <a href={getNaviUrl(r)} target="_blank" rel="noopener noreferrer" className="flex-1 py-2.5 bg-[#2563EB] text-white text-sm font-medium rounded-xl text-center flex items-center justify-center gap-1">
@@ -680,7 +713,7 @@ export default function WhatToEatPage() {
             {result.roadAddress && <p className="text-xs text-[#94A3B8] mb-1">{result.roadAddress}</p>}
             {result.telephone && <p className="text-xs text-[#94A3B8] mb-3">{result.telephone}</p>}
             <div className="flex gap-2 justify-center">
-              <a href={getNaverMapUrl(result)} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-[#16A34A] text-white text-sm font-medium rounded-lg flex items-center gap-1"><Map size={14} /> 지도</a>
+              <a href={getMapUrl(result)} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-[#16A34A] text-white text-sm font-medium rounded-lg flex items-center gap-1"><Map size={14} /> 지도</a>
               <a href={getNaviUrl(result)} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-[#2563EB] text-white text-sm font-medium rounded-lg flex items-center gap-1"><Navigation size={14} /> 길찾기</a>
               <button onClick={doPick} className="px-4 py-2 bg-[#FF6B35] text-white text-sm font-medium rounded-lg flex items-center gap-1"><RotateCcw size={14} /> 다시</button>
             </div>

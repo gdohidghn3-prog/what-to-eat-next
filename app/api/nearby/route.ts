@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
 
   // FD6(음식점) + CE7(카페) 카테고리 검색
   for (const category of ["FD6", "CE7"]) {
-    for (let page = 1; page <= 5; page++) {
+    for (let page = 1; page <= 45; page++) {
       try {
         const params = new URLSearchParams({
           category_group_code: category,
