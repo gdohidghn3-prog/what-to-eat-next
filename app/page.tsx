@@ -195,6 +195,8 @@ export default function WhatToEatPage() {
         `${query} 한식`, `${query} 중식`, `${query} 일식`,
         `${query} 양식`, `${query} 카페`, `${query} 치킨`,
         `${query} 분식`, `${query} 고기`, `${query} 피자`,
+        `${query} 아시안`, `${query} 베트남 쌀국수`, `${query} 태국`,
+        `${query} 햄버거`, `${query} 돈까스`, `${query} 국밥`,
       ];
       const allItems: Restaurant[] = [];
       const seen = new Set<string>();
