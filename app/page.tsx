@@ -51,12 +51,16 @@ const STORAGE = {
 // ── 유틸 ────────────────────────────────────────────────────
 
 function getNaverMapUrl(r: Restaurant): string {
+  // 좌표가 있으면 좌표로 검색, 없으면 이름+주소로
+  if (r.mapx && r.mapy) {
+    return `https://map.naver.com/v5/search/${encodeURIComponent(r.title)}?c=${r.mapx},${r.mapy},15,0,0,0,dh`;
+  }
   return `https://map.naver.com/v5/search/${encodeURIComponent(r.title + " " + (r.roadAddress || r.address))}`;
 }
 
-function getNaviUrl(r: Restaurant, myLat?: number, myLng?: number): string {
-  if (myLat && myLng) {
-    return `https://map.naver.com/v5/directions/${myLng},${myLat},내위치/${r.mapx ? "" : ""}${encodeURIComponent(r.title)}/-/walk`;
+function getNaviUrl(r: Restaurant): string {
+  if (r.mapx && r.mapy) {
+    return `https://map.naver.com/v5/directions/-/${r.mapx},${r.mapy},${encodeURIComponent(r.title)}/-/walk`;
   }
   return `https://map.naver.com/v5/search/${encodeURIComponent(r.title)}`;
 }
@@ -176,7 +180,21 @@ export default function WhatToEatPage() {
     );
   };
 
-  // ── 주변 동기화 ────────────────────────────────────────────
+  // ── 주소/장소 → 좌표 변환 ───────────────────────────────────
+
+  const resolveCoords = useCallback(async (query: string): Promise<{ x: string; y: string } | null> => {
+    if (myCoords) return { x: String(myCoords.lng), y: String(myCoords.lat) };
+    try {
+      const res = await fetch(`/api/address?query=${encodeURIComponent(query)}`);
+      const data = await res.json();
+      if (data.results?.length > 0) {
+        return { x: data.results[0].x, y: data.results[0].y };
+      }
+    } catch {}
+    return null;
+  }, [myCoords]);
+
+  // ── 주변 동기화 (카카오 반경 검색) ────────────────────────
 
   const syncNearby = useCallback(async () => {
     const query = locationInput.trim();
@@ -185,42 +203,54 @@ export default function WhatToEatPage() {
     setLocationText(query);
     localStorage.setItem(STORAGE.LAST_LOCATION, JSON.stringify({ text: query }));
 
-    // 위치 기록 저장
     const loc: SavedLocation = { address: query, lat: 0, lng: 0, usedAt: new Date().toISOString() };
     setSavedLocations((prev) => [loc, ...prev.filter((l) => l.address !== query)].slice(0, 10));
 
     try {
-      const queries = [
-        `${query} 맛집`, `${query} 음식점`, `${query} 식당`,
-        `${query} 한식`, `${query} 중식`, `${query} 일식`,
-        `${query} 양식`, `${query} 카페`, `${query} 치킨`,
-        `${query} 분식`, `${query} 고기`, `${query} 피자`,
-        `${query} 아시안`, `${query} 베트남 쌀국수`, `${query} 태국`,
-        `${query} 햄버거`, `${query} 돈까스`, `${query} 국밥`,
-      ];
-      const allItems: Restaurant[] = [];
-      const seen = new Set<string>();
+      const coords = await resolveCoords(query);
 
-      // 모든 쿼리를 병렬로 호출 (속도 개선)
-      const promises = queries.map((q) =>
-        fetch(`/api/search?query=${encodeURIComponent(q)}`).then((r) => r.json()).catch(() => ({ items: [] })),
-      );
-      const results = await Promise.all(promises);
-      for (const data of results) {
-        for (const item of data.items || []) {
-          const id = `${item.title}-${item.mapx}-${item.mapy}`;
-          if (!seen.has(id)) {
-            seen.add(id);
-            allItems.push({ ...item, id, selected: true });
+      if (coords) {
+        // 카카오 반경 검색 (좌표 + 반경)
+        const res = await fetch(`/api/nearby?x=${coords.x}&y=${coords.y}&radius=${radius}`);
+        const data = await res.json();
+
+        const allItems: Restaurant[] = (data.items || []).map((doc: Record<string, string>) => ({
+          id: doc.id || `${doc.place_name}-${doc.x}-${doc.y}`,
+          title: doc.place_name || "",
+          category: doc.category_name || "",
+          address: doc.address_name || "",
+          roadAddress: doc.road_address_name || "",
+          telephone: doc.phone || "",
+          mapx: doc.x || "",
+          mapy: doc.y || "",
+          link: doc.place_url || "",
+          selected: true,
+          distance: Number(doc.distance || 0),
+        }));
+
+        setRestaurants(allItems);
+      } else {
+        // 좌표 못 찾으면 네이버 텍스트 검색 폴백
+        const qs = [`${query} 맛집`, `${query} 음식점`, `${query} 카페`];
+        const allItems: Restaurant[] = [];
+        const seen = new Set<string>();
+        const promises = qs.map((q) =>
+          fetch(`/api/search?query=${encodeURIComponent(q)}`).then((r) => r.json()).catch(() => ({ items: [] })),
+        );
+        const results = await Promise.all(promises);
+        for (const data of results) {
+          for (const item of data.items || []) {
+            const id = `${item.title}-${item.mapx}-${item.mapy}`;
+            if (!seen.has(id)) { seen.add(id); allItems.push({ ...item, id, selected: true }); }
           }
         }
+        setRestaurants(allItems);
       }
 
-      setRestaurants(allItems);
       setCategoryFilter(new Set());
     } catch {}
     setSearchLoading(false);
-  }, [locationInput]);
+  }, [locationInput, radius, resolveCoords]);
 
   // ── 음식점 검색 ───────────────────────────────────────────
 
@@ -559,7 +589,7 @@ export default function WhatToEatPage() {
                       <span className="text-lg shrink-0">{getCategoryEmoji(r.category)}</span>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-[#1A1A2E] truncate">{r.title}</p>
-                        <p className="text-[11px] text-[#94A3B8] truncate">{formatCategory(r.category)} {r.telephone && `· ${r.telephone}`}</p>
+                        <p className="text-[11px] text-[#94A3B8] truncate">{formatCategory(r.category)}{r.distance ? ` · ${r.distance}m` : ""}{r.telephone ? ` · ${r.telephone}` : ""}</p>
                       </div>
                       <div className="flex items-center gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                         <button onClick={() => setDetailId(detailId === r.id ? null : r.id)} className="p-1 text-[#94A3B8] hover:text-[#6366F1]">
