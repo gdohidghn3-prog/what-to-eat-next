@@ -145,17 +145,31 @@ export default function WhatToEatPage() {
     setLocationText("위치 확인 중...");
 
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
+      async (pos) => {
         const lat = pos.coords.latitude;
         const lng = pos.coords.longitude;
         setMyCoords({ lat, lng });
+
+        // 역지오코딩으로 동네 이름 가져오기
+        try {
+          const res = await fetch(`/api/geocode?lat=${lat}&lng=${lng}`);
+          const data = await res.json();
+          if (data.dong || data.district) {
+            const text = [data.dong, data.district, data.city].filter(Boolean).join(" ");
+            setLocationText(text);
+            setLocationInput(text);
+            localStorage.setItem(STORAGE.LAST_LOCATION, JSON.stringify({ text }));
+            const loc: SavedLocation = { address: text, lat, lng, usedAt: new Date().toISOString() };
+            setSavedLocations((prev) => [loc, ...prev.filter((l) => l.address !== text)].slice(0, 10));
+            return;
+          }
+        } catch {}
+
+        // 역지오코딩 실패 시 좌표 표시
         const text = `현재 위치 (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
         setLocationText(text);
         setLocationInput(text);
         localStorage.setItem(STORAGE.LAST_LOCATION, JSON.stringify({ text }));
-        // 위치 기록 저장
-        const loc: SavedLocation = { address: text, lat, lng, usedAt: new Date().toISOString() };
-        setSavedLocations((prev) => [loc, ...prev.filter((l) => l.address !== text)].slice(0, 10));
       },
       () => setLocationText("위치 가져오기 실패"),
       { enableHighAccuracy: true, timeout: 8000 },
@@ -176,7 +190,11 @@ export default function WhatToEatPage() {
     setSavedLocations((prev) => [loc, ...prev.filter((l) => l.address !== query)].slice(0, 10));
 
     try {
-      const queries = [`${query} 맛집`, `${query} 음식점`, `${query} 식당`, `${query} 카페`];
+      const queries = [
+        `${query} 맛집`, `${query} 음식점`, `${query} 식당`,
+        `${query} 한식`, `${query} 중식`, `${query} 일식`,
+        `${query} 카페`, `${query} 치킨`, `${query} 분식`,
+      ];
       const allItems: Restaurant[] = [];
       const seen = new Set<string>();
 
