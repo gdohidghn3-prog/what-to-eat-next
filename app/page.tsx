@@ -235,7 +235,12 @@ export default function WhatToEatPage() {
 
         // 2. 네이버 텍스트 검색 보완 (카카오에서 빠진 음식점 추가)
         const seen = new Set(allItems.map((r) => r.title));
-        const naverQueries = [`${query} 맛집`, `${query} 음식점`, `${query} 카페`, `${query} 아시안`];
+        const naverQueries = [
+          `${query} 맛집`, `${query} 음식점`, `${query} 카페`,
+          `${query} 한식`, `${query} 중식`, `${query} 일식`, `${query} 양식`,
+          `${query} 치킨`, `${query} 분식`, `${query} 쌀국수`, `${query} 고기`,
+          `${query} 피자`, `${query} 햄버거`, `${query} 국밥`, `${query} 베이커리`,
+        ];
         const naverPromises = naverQueries.map((q) =>
           fetch(`/api/search?query=${encodeURIComponent(q)}`).then((r) => r.json()).catch(() => ({ items: [] })),
         );
